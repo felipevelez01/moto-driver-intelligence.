@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Moto Driver Intelligence · Medellín</title>
+  <meta name="theme-color" content="#0b1018">
+  <meta name="description" content="Asistente táctico de zonas para conductor de moto en Medellín.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card: #161b22;
+      --border: #30363d;
+      --text: #f0f6fc;
+      --muted: #8b949e;
+      --green: #2ea043;
+      --green-bright: #3fb950;
+      --yellow: #d29922;
+      --orange: #f0883e;
+      --red: #f85149;
+      --blue: #58a6ff;
+      --purple: #a371f7;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* HEADER COMPACTO */
+    header {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 800;
+      font-size: 0.95rem;
+      letter-spacing: 0.5px;
+      color: var(--text);
+    }
+
+    .gps-badge {
+      font-size: 0.75rem;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #21262d;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .gps-badge.active {
+      background: rgba(46, 160, 67, 0.2);
+      border-color: var(--green-bright);
+      color: var(--green-bright);
+    }
+
+    /* PANEL DE DECISIÓN TÁCTICA */
+    .decision-banner {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      transition: background 0.3s ease;
+    }
+
+    .decision-stay { background: linear-gradient(90deg, rgba(46,160,67,0.28), rgba(22,27,34,0.95)); border-left: 5px solid var(--green-bright); }
+    .decision-move { background: linear-gradient(90deg, rgba(210,153,34,0.28), rgba(22,27,34,0.95)); border-left: 5px solid var(--yellow); }
+    .decision-home { background: linear-gradient(90deg, rgba(88,166,255,0.28), rgba(22,27,34,0.95)); border-left: 5px solid var(--blue); }
+
+    .decision-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .decision-tag {
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(0,0,0,0.4);
+    }
+
+    .decision-title {
+      font-size: 1.05rem;
+      font-weight: 800;
+      line-height: 1.2;
+    }
+
+    .decision-reason {
+      font-size: 0.8rem;
+      color: #c9d1d9;
+      line-height: 1.3;
+    }
+
+    /* MAPA CENTRAL */
+    #map-container {
+      position: relative;
+      flex: 1;
+      width: 100%;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+      background: #090d16;
+    }
+
+    /* CONTROLES FLOTANTES SOBRE EL MAPA */
+    .map-overlay-controls {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 900;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .map-btn {
+      background: rgba(22, 27, 34, 0.92);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      cursor: pointer;
+    }
+
+    .map-btn:active {
+      transform: scale(0.96);
+    }
+
+    /* PANEL INFERIOR (TABS + BOTONES DE 1 TOQUE) */
+    .bottom-sheet {
+      background: var(--card);
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      max-height: 46vh;
+      z-index: 1000;
+    }
+
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-bottom: 1px solid var(--border);
+      background: #0d1117;
+    }
+
+    .tab-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      padding: 9px 4px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+    }
+
+    .tab-btn.active {
+      color: var(--blue);
+      border-bottom-color: var(--blue);
+      background: rgba(88, 166, 255, 0.07);
+    }
+
+    .tab-content {
+      padding: 10px 12px;
+      overflow-y: auto;
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* BOTONES DE APRENDIZAJE (1 TOQUE) */
+    .feedback-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    .feedback-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .fb-btn {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 11px 10px;
+      background: #21262d;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: left;
+      transition: transform 0.1s ease, background 0.2s;
+    }
+
+    .fb-btn:active {
+      transform: scale(0.96);
+    }
+
+    .fb-btn.hot { border-left: 4px solid var(--green-bright); }
+    .fb-btn.long { border-left: 4px solid var(--blue); }
+    .fb-btn.cold { border-left: 4px solid var(--yellow); }
+    .fb-btn.jam { border-left: 4px solid var(--red); }
+
+    .fb-sub {
+      display: block;
+      font-size: 0.68rem;
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    /* LISTA DE ZONAS */
+    .zone-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .zone-item {
+      background: #21262d;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+    }
+
+    .zone-info h4 {
+      font-size: 0.85rem;
+      margin-bottom: 2px;
+    }
+
+    .zone-info p {
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    .score-pill {
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-weight: 800;
+      font-size: 0.8rem;
+      text-align: right;
+      min-width: 68px;
+    }
+
+    /* SIMULADOR Y MEMORIA */
+    .sim-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+      align-items: center;
+    }
+
+    select, button.action-secondary {
+      background: #21262d;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 7px 10px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      flex: 1;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 50%;
+      left: 50%;
+      transform: translate(-50%, 50%);
+      background: rgba(22, 27, 34, 0.96);
+      border: 1px solid var(--green-bright);
+      color: var(--text);
+      padding: 12px 18px;
+      border-radius: 10px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      z-index: 2000;
+      display: none;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.7);
+      text-align: center;
+    }
+
+    /* Acabado móvil premium y controles de navegación */
+    :root { --bg:#0b1018; --card:#121a25; --border:#273447; --blue:#65b7ff; }
+    header { padding:10px 14px; min-height:54px; background:rgba(18,26,37,.98); }
+    .brand { letter-spacing:.8px; font-size:.9rem; }
+    .gps-badge { border-radius:999px; padding:7px 11px; }
+    .decision-banner { padding:11px 14px; gap:5px; }
+    .decision-title { font-size:1.08rem; }
+    #map-container { min-height:170px; }
+    .bottom-sheet { max-height:42vh; padding-bottom:env(safe-area-inset-bottom); }
+    .tabs { position:sticky; top:0; }
+    .tab-btn { min-height:44px; font-size:.72rem; }
+    .tab-content { padding:12px 14px; overscroll-behavior:contain; }
+    .fb-btn { min-height:58px; }
+    .map-btn, .action-secondary { min-height:42px; }
+    .nav-main { background:linear-gradient(135deg,#1677d2,#1456a0); color:white; border:0; border-radius:10px; padding:11px 14px; font-weight:800; box-shadow:0 5px 16px #0005; }
+    .nav-main:active { transform:scale(.98); }
+    .gps-help { font-size:.68rem; color:var(--muted); margin-top:4px; }
+    .leaflet-tile-pane { filter:brightness(.88) contrast(1.12); }
+    .leaflet-control-attribution { font-size:9px !important; }
+    @media (max-height:700px) { .bottom-sheet { max-height:38vh; } .decision-banner { padding:7px 12px; } }
+    @media (min-width:700px) { body { max-width:760px; margin:0 auto; border-left:1px solid var(--border); border-right:1px solid var(--border); } }
+    @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="brand">
+      <span>🏍️ MOTO INTEL MED</span>
+    </div>
+    <div id="gps-status" class="gps-badge" onclick="startContinuousGPS(true)" role="button" aria-label="Activar seguimiento GPS">
+      📡 Activar GPS
+    </div>
+  </header>
+
+  <!-- BANNER DE DECISIÓN INTELIGENTE -->
+  <section id="decision-box" class="decision-banner decision-stay">
+    <div class="decision-top">
+      <span id="decision-tag" class="decision-tag">CALCULANDO...</span>
+      <span id="clock-display" style="font-size:0.75rem; color:var(--muted);">--:--</span>
+    </div>
+    <div id="decision-title" class="decision-title">Analizando zonas de Medellín...</div>
+    <div id="decision-reason" class="decision-reason">Detectando ubicación y horario operativo.</div>
+  </section>
+
+  <div style="padding:8px 12px;background:var(--card);border-bottom:1px solid var(--border);">
+    <button class="nav-main" style="width:100%;" onclick="navigateToRecommendation()">🧭 NAVEGAR A LA RECOMENDACIÓN</button>
+    <div class="gps-help" id="gps-help">El seguimiento GPS continuo se activa al permitir la ubicación.</div>
+  </div>
+
+  <!-- MAPA INTERACTIVO -->
+  <div id="map-container">
+    <div id="map"></div>
+    <div class="map-overlay-controls">
+      <button class="map-btn" onclick="locateDriver(true)">🎯 Mi GPS</button>
+      <button class="map-btn" onclick="focusHome()">🏠 El Diamante</button>
+    </div>
+  </div>
+
+  <!-- PANEL INFERIOR -->
+  <section class="bottom-sheet">
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('tab-learn', this)">⚡ 1-Toque (Aprender)</button>
+      <button class="tab-btn" onclick="switchTab('tab-zones', this)">🔥 Ranking Zonas</button>
+      <button class="tab-btn" onclick="switchTab('tab-sim', this)">🕒 Horarios / Datos</button>
+    </div>
+
+    <!-- TAB 1: APRENDIZAJE DE 1 TOQUE -->
+    <div id="tab-learn" class="tab-content active">
+      <div class="feedback-header">
+        <span>Zona actual: <strong id="current-zone-label" style="color:var(--blue)">Detectando...</strong></span>
+        <span id="learned-counter">0 obs. guardadas</span>
+      </div>
+      <div class="feedback-grid">
+        <button class="fb-btn hot" onclick="recordObservation('HOT')">
+          <span>🔥</span>
+          <div>
+            Buena Dinámica
+            <span class="fb-sub">Salen rápido / Buen pago</span>
+          </div>
+        </button>
+        <button class="fb-btn long" onclick="recordObservation('LONG')">
+          <span>🚀</span>
+          <div>
+            Salió Carrera Larga
+            <span class="fb-sub">Viaje rentable (+15 pts)</span>
+          </div>
+        </button>
+        <button class="fb-btn cold" onclick="recordObservation('COLD')">
+          <span>❄️</span>
+          <div>
+            Zona Fría / Barata
+            <span class="fb-sub">Poca demanda o tarifas bajas</span>
+          </div>
+        </button>
+        <button class="fb-btn jam" onclick="recordObservation('JAM')">
+          <span>🚧</span>
+          <div>
+            Taco / Retén
+            <span class="fb-sub">Castigar zona por 2 horas</span>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <!-- TAB 2: RANKING DE ZONAS EN TIEMPO REAL -->
+    <div id="tab-zones" class="tab-content">
+      <div id="zone-ranking-list" class="zone-list"></div>
+    </div>
+
+    <!-- TAB 3: SIMULADOR DE HORARIOS Y MEMORIA -->
+    <div id="tab-sim" class="tab-content">
+      <p style="font-size:0.75rem; color:var(--muted); margin-bottom:8px;">
+        Prueba cómo responde el asistente en distintos horarios o toca cualquier punto del mapa para simular tu ubicación:
+      </p>
+      <div class="sim-row">
+        <select id="sim-mode" onchange="updateAnalysis()">
+          <option value="real">⏱️ Usar Hora Real del Teléfono</option>
+          <option value="sim">🧪 Simular Día y Hora</option>
+        </select>
+      </div>
+      <div class="sim-row" id="sim-controls" style="display:none;">
+        <select id="sim-day" onchange="updateAnalysis()">
+          <option value="1">Lunes - Jueves</option>
+          <option value="5">Viernes</option>
+          <option value="6">Sábado</option>
+          <option value="0">Domingo</option>
+        </select>
+        <select id="sim-hour" onchange="updateAnalysis()">
+          <option value="6">06:30 AM (Pico Mañana)</option>
+          <option value="10">10:00 AM (Media Mañana)</option>
+          <option value="12">12:30 PM (Mediodía / U)</option>
+          <option value="15">03:00 PM (Hora Valle)</option>
+          <option value="17">05:30 PM (Pico Tarde)</option>
+          <option value="20">08:00 PM (Salida Nocturna)</option>
+          <option value="22">10:30 PM (Cierre / Noche)</option>
+        </select>
+      </div>
+      <div class="sim-row" style="margin-top:6px;">
+        <button class="action-secondary" onclick="clearObservations()">🗑️ Borrar aprendizaje guardado</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="toast" class="toast"></div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    /**************************************************************
+     * 1. BASE DE CONOCIMIENTO DE MEDELLÍN (ZONAS Y COORDENADAS)
+     **************************************************************/
+    const HOME_BASE = {
+      id: 'robledo_diamante',
+      name: 'Robledo El Diamante (Base)',
+      lat: 6.2768,
+      lng: -75.5965,
+      radiusKm: 1.6,
+      profile: 'Conecta con Pilarica, ITM Robledo, Pascual Bravo y salidas largas hacia el Centro/Sur en la mañana.'
+    };
+
+    const MEDELLIN_ZONES = [
+      {
+        id: 'robledo_diamante',
+        name: 'Robledo El Diamante / Pilarica / ITM',
+        lat: 6.2755,
+        lng: -75.5935,
+        isHome: true,
+        desc: 'Fuerte en pico mañana (salidas al sur/centro) y cambios de jornada universitaria (ITM/Pascual/Colegio Mayor).',
+        // Puntajes base por hora (0 a 23) en día entre semana
+        hourlyBase: [25,20,15,20,45,88,92,85,70,62,65,75,78,65,58,62,72,82,84,78,72,60,45,30]
+      },
+      {
+        id: 'punto_cero_unal',
+        name: 'Punto Cero / UNAL / Terminal Norte',
+        lat: 6.2688,
+        lng: -75.5725,
+        isHome: false,
+        desc: 'Nodo estratégico cerca de Robledo. Alta rotación de viajeros (Terminal), estudiantes y conexión oriente-occidente.',
+        hourlyBase: [30,25,20,25,50,82,88,84,76,74,78,85,86,75,70,74,86,90,85,75,65,50,40,35]
+      },
+      {
+        id: 'laureles_70_upb',
+        name: 'Laureles / UPB / La 70',
+        lat: 6.2455,
+        lng: -75.5905,
+        isHome: false,
+        desc: 'Carreras ágiles sin tanto trancón de autopista. Muy fuerte al mediodía, tarde y noches de jueves a sábado.',
+        hourlyBase: [45,35,25,20,30,65,78,80,75,72,78,88,88,76,72,78,88,92,90,88,85,82,75,60]
+      },
+      {
+        id: 'centro_sandiego',
+        name: 'Centro / Alpujarra / San Diego',
+        lat: 6.2408,
+        lng: -75.5685,
+        isHome: false,
+        desc: 'Alta demanda entre 8:00 AM y 6:30 PM. En pico tarde saca excelentes viajes de regreso hacia Robledo y Occidente.',
+        hourlyBase: [20,15,15,20,35,68,85,90,88,86,85,88,86,82,80,85,95,94,78,55,40,30,25,20]
+      },
+      {
+        id: 'industriales_rio',
+        name: 'Industriales / Ciudad del Río',
+        lat: 6.2265,
+        lng: -75.5742,
+        isHome: false,
+        desc: 'Zona de oficinas y clínicas. Entre 4:30 PM y 7:00 PM paga las mejores tarifas largas hacia el norte/occidente.',
+        hourlyBase: [25,20,15,15,30,65,84,88,82,78,78,84,85,78,76,84,96,96,84,68,52,40,30,25]
+      },
+      {
+        id: 'belen_molinos',
+        name: 'Belén / Los Molinos / La 80',
+        lat: 6.2325,
+        lng: -75.6038,
+        isHome: false,
+        desc: 'Buena conexión por toda la 80 directo hacia Robledo. Flujo constante todo el día.',
+        hourlyBase: [30,20,15,20,40,84,88,82,72,68,70,78,80,72,68,74,85,88,82,74,65,52,40,30]
+      },
+      {
+        id: 'poblado_provenza',
+        name: 'El Poblado / Milla de Oro / Provenza',
+        lat: 6.2088,
+        lng: -75.5675,
+        isHome: false,
+        desc: 'Tarifas altas en hora pico tarde y noches, pero exige evaluar distancia de retorno a Robledo.',
+        hourlyBase: [55,45,35,25,25,55,75,84,82,78,76,82,84,78,76,85,95,96,92,88,88,86,80,68]
+      },
+      {
+        id: 'envigado_viva',
+        name: 'Envigado / Viva Envigado',
+        lat: 6.1735,
+        lng: -75.5865,
+        isHome: false,
+        desc: 'Rentable solo si ya estás en el sur y buscas enganchar carrera larga subiendo por la Regional o Las Vegas.',
+        hourlyBase: [30,20,15,15,30,72,82,80,70,68,70,76,78,70,68,78,90,90,80,70,62,50,40,30]
+      }
+    ];
+
+    /**************************************************************
+     * 2. ESTADO GLOBAL Y APRENDIZAJE (LOCALSTORAGE)
+     **************************************************************/
+    const STORAGE_KEY = 'MOTO_INTEL_MED_V1';
+    let driverPos = { lat: HOME_BASE.lat, lng: HOME_BASE.lng }; // Empieza en Robledo El Diamante por defecto
+    let gpsWatchId = null;
+    let map, driverMarker, zoneCircles = {};
+
+    function loadMemory() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : { observations: [] };
+      } catch (e) {
+        return { observations: [] };
+      }
+    }
+
+    function saveMemory(data) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+
+    /**************************************************************
+     * 3. UTILIDADES GEOMÉTRICAS (HAVERSINE)
+     **************************************************************/
+    function getDistanceKm(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    function getClosestZone(lat, lng) {
+      let best = MEDELLIN_ZONES[0];
+      let minDist = Infinity;
+      MEDELLIN_ZONES.forEach(z => {
+        const d = getDistanceKm(lat, lng, z.lat, z.lng);
+        if (d < minDist) {
+          minDist = d;
+          best = z;
+        }
+      });
+      return { zone: best, distKm: minDist };
+    }
+
+    /**************************************************************
+     * 4. MOTOR DE INTELIGENCIA Y DECISIÓN
+     **************************************************************/
+    function getActiveTime() {
+      const mode = document.getElementById('sim-mode').value;
+      document.getElementById('sim-controls').style.display = mode === 'sim' ? 'flex' : 'none';
+
+      const now = new Date();
+      if (mode === 'sim') {
+        const day = parseInt(document.getElementById('sim-day').value, 10);
+        const hour = parseInt(document.getElementById('sim-hour').value, 10);
+        return { day, hour, minute: 30, isSim: true };
+      }
+      return {
+        day: now.getDay(),
+        hour: now.getHours(),
+        minute: now.getMinutes(),
+        isSim: false
+      };
+    }
+
+    function calculateZoneScore(zone, day, hour) {
+      let score = zone.hourlyBase[hour] || 50;
+
+      // Ajustes de fin de semana (Viernes noche, Sábado, Domingo)
+      const isWeekendNight = (day === 5 || day === 6) && (hour >= 19 || hour <= 3);
+      if (isWeekendNight && (zone.id === 'laureles_70_upb' || zone.id === 'poblado_provenza')) {
+        score += 18;
+      }
+      if (day === 0 && (zone.id === 'centro_sandiego' || zone.id === 'industriales_rio')) {
+        score -= 20; // Domingo oficinas cerradas
+      }
+
+      // Integrar aprendizaje del conductor en esta franja horaria (+/- 1 hora)
+      const memory = loadMemory();
+      const nowMs = Date.now();
+
+      memory.observations.forEach(obs => {
+        if (obs.zoneId !== zone.id) return;
+
+        // Castigo temporal reciente por Taco/Retén (dura 2 horas reales)
+        if (obs.type === 'JAM' && (nowMs - obs.timestamp) < 2 * 3600 * 1000) {
+          score -= 35;
+        }
+
+        // Aprendizaje histórico en horas similares
+        const hourDiff = Math.abs(obs.hour - hour);
+        if (hourDiff <= 1) {
+          if (obs.type === 'HOT') score += 8;
+          if (obs.type === 'LONG') score += 14;
+          if (obs.type === 'COLD') score -= 10;
+        }
+      });
+
+      return Math.max(5, Math.min(99, Math.round(score)));
+    }
+
+    function evaluateStrategy() {
+      const { day, hour, minute, isSim } = getActiveTime();
+      const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+      const padMin = String(minute).padStart(2, '0');
+      document.getElementById('clock-display').textContent =
+        `${dayNames[day]} ${hour}:${padMin} ${isSim ? '(Simulado)' : ''}`;
+
+      const closestInfo = getClosestZone(driverPos.lat, driverPos.lng);
+      const currentZone = closestInfo.zone;
+      document.getElementById('current-zone-label').textContent = currentZone.name.split('/')[0].trim();
+
+      const distToHomeKm = getDistanceKm(driverPos.lat, driverPos.lng, HOME_BASE.lat, HOME_BASE.lng);
+
+      // Evaluar todas las zonas
+      const evaluated = MEDELLIN_ZONES.map(z => {
+        const rawScore = calculateZoneScore(z, day, hour);
+        const distFromDriver = getDistanceKm(driverPos.lat, driverPos.lng, z.lat, z.lng);
+        const distZoneToHome = getDistanceKm(z.lat, z.lng, HOME_BASE.lat, HOME_BASE.lng);
+
+        // Penalizar desplazamiento en vacío (3.5 puntos por cada km de distancia)
+        const netScore = Math.round(rawScore - (distFromDriver * 3.5));
+
+        return {
+          ...z,
+          rawScore,
+          netScore,
+          distFromDriver,
+          distZoneToHome
+        };
+      }).sort((a, b) => b.netScore - a.netScore);
+
+      const currentEval = evaluated.find(z => z.id === currentZone.id);
+      const bestTarget = evaluated[0];
+      const homeEval = evaluated.find(z => z.id === 'robledo_diamante');
+
+      // LÓGICA DE DECISIÓN: QUEDARSE vs MOVERSE vs REGRESAR A ROBLEDO EL DIAMANTE
+      const box = document.getElementById('decision-box');
+      const tag = document.getElementById('decision-tag');
+      const title = document.getElementById('decision-title');
+      const reason = document.getElementById('decision-reason');
+
+      box.className = 'decision-banner';
+
+      // Caso 1: Hora de retorno estratégico hacia Robledo El Diamante
+      // (Noche tarde >= 21h lejos de casa, o zona actual fría y Robledo tiene buen puntaje)
+      const isLateNight = (hour >= 21 || hour <= 4) && !(day === 5 || day === 6);
+      const shouldReturnHome =
+        (distToHomeKm > 2.2 && isLateNight) ||
+        (distToHomeKm > 3.5 && hour >= 17 && hour <= 19 && currentEval.rawScore >= 75) ||
+        (distToHomeKm > 2.0 && currentEval.rawScore < 55 && homeEval.rawScore >= 68);
+
+      if (distToHomeKm > 3.5 && hour >= 16 && hour <= 19) {
+        // En pleno pico tarde estando lejos de Robledo: buscar carrera filtrada rumbo a Robledo
+        box.classList.add('decision-home');
+        tag.textContent = '🧭 RETORNO PAGADO A ROBLEDO';
+        title.textContent = `Filtra carreras hacia Robledo / Occidente (${distToHomeKm.toFixed(1)} km)`;
+        reason.textContent = `Estás en hora pico de regreso. En ${currentZone.name.split('/')[0]} (${currentEval.rawScore} pts) salen viajes largos subiendo por la 80 o Autopista hacia El Diamante.`;
+      } else if (shouldReturnHome) {
+        box.classList.add('decision-home');
+        tag.textContent = '🏠 REGRESAR A ROBLEDO EL DIAMANTE';
+        title.textContent = `Repliega hacia Robledo El Diamante (${distToHomeKm.toFixed(1)} km)`;
+        reason.textContent = `Tu zona actual (${currentEval.rawScore} pts) no compensa rodar en vacío a esta hora. Prioriza subir hacia Pilarica / El Diamante.`;
+      } else if (bestTarget.id !== currentZone.id && (bestTarget.netScore - currentEval.netScore) >= 10) {
+        // Caso 2: Conviene desplazarse a otra zona cercana más caliente
+        box.classList.add('decision-move');
+        tag.textContent = '🟡 DESPLAZARSE DE ZONA';
+        title.textContent = `Muévete a ${bestTarget.name.split('/')[0]} (a ${bestTarget.distFromDriver.toFixed(1)} km)`;
+        reason.textContent = `Tiene ${bestTarget.rawScore} pts de demanda vs ${currentEval.rawScore} pts donde estás. ${bestTarget.desc}`;
+      } else {
+        // Caso 3: Quedarse en la zona actual
+        box.classList.add('decision-stay');
+        tag.textContent = '🟢 QUEDARSE AQUÍ';
+        title.textContent = `Mantente en ${currentZone.name.split('/')[0]} (Score: ${currentEval.rawScore}/99)`;
+        reason.textContent = `No gastes gasolina moviéndote en vacío. ${currentZone.desc}`;
+      }
+
+      renderZoneList(evaluated);
+      renderMapMarkers(evaluated);
+      updateCounter();
+    }
+
+    /**************************************************************
+     * 5. RENDERIZADO DE MAPA Y RANKING
+     **************************************************************/
+    function initMap() {
+      map = L.map('map', {
+        zoomControl: false,
+        attributionControl: false
+      }).setView([driverPos.lat, driverPos.lng], 13);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18
+      }).addTo(map);
+
+      // Marcador del conductor
+      const driverIcon = L.divIcon({
+        html: `<div style="background:#58a6ff;color:#fff;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;border:3px solid #fff;box-shadow:0 0 12px rgba(88,166,255,0.9);">🏍️</div>`,
+        className: '',
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      });
+
+      driverMarker = L.marker([driverPos.lat, driverPos.lng], { icon: driverIcon })
+        .addTo(map)
+        .bindPopup('<b>Tu ubicación actual</b><br>Toca cualquier parte del mapa si deseas moverla manualmente.');
+
+      // Permitir tocar el mapa para mover la posición (ideal si el GPS está apagado o simulando)
+      map.on('click', (e) => {
+        driverPos = { lat: e.latlng.lat, lng: e.latlng.lng };
+        driverMarker.setLatLng([driverPos.lat, driverPos.lng]);
+        updateAnalysis();
+        showToast('📍 Ubicación actualizada en el mapa');
+      });
+
+      updateAnalysis();
+      startContinuousGPS(true);
+    }
+
+    function renderMapMarkers(evaluatedZones) {
+      evaluatedZones.forEach(z => {
+        let color = '#2ea043'; // Verde
+        if (z.rawScore < 75) color = '#d29922'; // Amarillo
+        if (z.rawScore < 55) color = '#f85149'; // Rojo
+        if (z.isHome) color = '#58a6ff'; // Azul para Robledo El Diamante
+
+        if (zoneCircles[z.id]) {
+          map.removeLayer(zoneCircles[z.id]);
+        }
+
+        const circle = L.circle([z.lat, z.lng], {
+          color: color,
+          fillColor: color,
+          fillOpacity: 0.28,
+          weight: z.isHome ? 3 : 2,
+          radius: 750
+        }).addTo(map);
+
+        circle.bindPopup(`
+          <div style="color:#111;font-size:13px;">
+            <strong>${z.name}</strong><br/>
+            🔥 Probabilidad buena carrera: <b>${z.rawScore}/99</b><br/>
+            📏 Distancia: <b>${z.distFromDriver.toFixed(1)} km</b><br/>
+            <span style="font-size:11px;color:#444;">${z.desc}</span>
+          </div>
+        `);
+
+        zoneCircles[z.id] = circle;
+      });
+    }
+
+    function renderZoneList(evaluatedZones) {
+      const container = document.getElementById('zone-ranking-list');
+      container.innerHTML = '';
+
+      evaluatedZones.forEach((z, idx) => {
+        let badgeBg = 'rgba(46, 160, 67, 0.2)';
+        let badgeColor = '#3fb950';
+        if (z.rawScore < 75) { badgeBg = 'rgba(210, 153, 34, 0.2)'; badgeColor = '#d29922'; }
+        if (z.rawScore < 55) { badgeBg = 'rgba(248, 81, 73, 0.2)'; badgeColor = '#f85149'; }
+
+        const item = document.createElement('div');
+        item.className = 'zone-item';
+        item.onclick = () => {
+          map.setView([z.lat, z.lng], 15);
+          zoneCircles[z.id].openPopup();
+        };
+
+        item.innerHTML = `
+          <div class="zone-info">
+            <h4>${idx + 1}. ${z.name} ${z.isHome ? '🏠' : ''}</h4>
+            <p>A ${z.distFromDriver.toFixed(1)} km de ti • Rentabilidad Neta: ${z.netScore} pts</p>
+          </div>
+          <div class="score-pill" style="background:${badgeBg}; color:${badgeColor};">
+            ${z.rawScore} pts
+          </div>
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    /**************************************************************
+     * 6. APRENDIZAJE CON 1 TOQUE Y GPS
+     **************************************************************/
+    function recordObservation(type) {
+      const { day, hour } = getActiveTime();
+      const closest = getClosestZone(driverPos.lat, driverPos.lng).zone;
+      const memory = loadMemory();
+
+      memory.observations.push({
+        zoneId: closest.id,
+        zoneName: closest.name,
+        type,
+        day,
+        hour,
+        timestamp: Date.now()
+      });
+
+      saveMemory(memory);
+      updateAnalysis();
+
+      const labels = {
+        HOT: `🔥 Aprendido: ${closest.name.split('/')[0]} está pagando bien a las ${hour}:00`,
+        LONG: `🚀 Aprendido: Carrera larga registrada en ${closest.name.split('/')[0]}`,
+        COLD: `❄️ Aprendido: ${closest.name.split('/')[0]} marcado como frío en este horario`,
+        JAM: `🚧 Alerta: ${closest.name.split('/')[0]} penalizado por 2h (Taco/Retén)`
+      };
+      showToast(labels[type]);
+    }
+
+    function updateCounter() {
+      const memory = loadMemory();
+      document.getElementById('learned-counter').textContent = `${memory.observations.length} obs. guardadas`;
+    }
+
+    function clearObservations() {
+      localStorage.removeItem(STORAGE_KEY);
+      updateAnalysis();
+      showToast('🗑️ Historial reiniciado');
+    }
+
+    function startContinuousGPS(centerMap = false) {
+      const badge = document.getElementById('gps-status');
+      const help = document.getElementById('gps-help');
+      if (!navigator.geolocation) {
+        badge.textContent = '⚠️ GPS no disponible';
+        help.textContent = 'Este navegador no ofrece geolocalización. Puedes tocar el mapa para ubicarte.';
+        return;
+      }
+      if (gpsWatchId !== null) {
+        if (centerMap) map.setView([driverPos.lat, driverPos.lng], 15);
+        return;
+      }
+      badge.textContent = '📡 Conectando GPS…';
+      help.textContent = 'Solicitando permiso de ubicación precisa…';
+      gpsWatchId = navigator.geolocation.watchPosition((pos) => {
+        const accuracy = pos.coords.accuracy || 9999;
+        // Evita saltos de ubicación por lecturas GPS muy imprecisas.
+        if (accuracy > 250) {
+          help.textContent = `GPS buscando precisión (±${Math.round(accuracy)} m).`;
+          return;
+        }
+        driverPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        if (driverMarker) driverMarker.setLatLng([driverPos.lat, driverPos.lng]);
+        if (centerMap) {
+          map.setView([driverPos.lat, driverPos.lng], 15);
+          centerMap = false;
+        }
+        badge.textContent = accuracy <= 80 ? '🟢 GPS preciso' : '🟡 GPS activo';
+        badge.classList.add('active');
+        help.textContent = `Seguimiento continuo activo · precisión aproximada ±${Math.round(accuracy)} m.`;
+        updateAnalysis();
+      }, (err) => {
+        badge.textContent = '📍 Reintentar GPS';
+        badge.classList.remove('active');
+        const messages = {1:'Permiso de ubicación denegado. Actívalo en los permisos del navegador.',2:'No se pudo obtener la ubicación. Revisa GPS y señal.',3:'El GPS tardó demasiado. Vuelve a intentarlo.'};
+        help.textContent = messages[err.code] || 'No fue posible activar el GPS. Puedes fijar tu ubicación tocando el mapa.';
+        if (gpsWatchId !== null) navigator.geolocation.clearWatch(gpsWatchId);
+        gpsWatchId = null;
+      }, { enableHighAccuracy:true, maximumAge:3000, timeout:20000 });
+    }
+
+    // Compatibilidad con los botones y llamadas originales.
+    function locateDriver(centerMap) { startContinuousGPS(!!centerMap); }
+
+    function navigateToRecommendation() {
+      const { day, hour } = getActiveTime();
+      const current = getClosestZone(driverPos.lat, driverPos.lng).zone;
+      const scored = MEDELLIN_ZONES.map(z => ({
+        zone:z,
+        score:calculateZoneScore(z, day, hour) - getDistanceKm(driverPos.lat, driverPos.lng, z.lat, z.lng) * 3.5
+      })).sort((a,b)=>b.score-a.score);
+      const homeDistance = getDistanceKm(driverPos.lat, driverPos.lng, HOME_BASE.lat, HOME_BASE.lng);
+      const currentEntry = scored.find(item => item.zone.id === current.id);
+      const currentScore = calculateZoneScore(current, day, hour);
+      const homeScore = calculateZoneScore(MEDELLIN_ZONES.find(z=>z.id==='robledo_diamante'), day, hour);
+      const late = (hour >= 21 || hour <= 4) && !(day === 5 || day === 6);
+      const returnHome = (homeDistance > 2.2 && late) || (homeDistance > 3.5 && hour >= 17 && hour <= 19 && currentScore >= 75) || (homeDistance > 2 && currentScore < 55 && homeScore >= 68);
+      let destination = scored[0].zone;
+      if (returnHome || (homeDistance > 3.5 && hour >= 16 && hour <= 19)) destination = MEDELLIN_ZONES.find(z=>z.id==='robledo_diamante');
+      else if (scored[0].zone.id === current.id || scored[0].score - currentEntry.score < 10) destination = current;
+      const url = `https://www.google.com/maps/dir/?api=1&destination=${destination.lat},${destination.lng}&travelmode=driving`;
+      window.open(url, '_blank', 'noopener');
+    }
+
+    function focusHome() {
+      map.setView([HOME_BASE.lat, HOME_BASE.lng], 15);
+      zoneCircles['robledo_diamante'].openPopup();
+    }
+
+    function switchTab(tabId, btn) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      btn.classList.add('active');
+    }
+
+    function updateAnalysis() {
+      evaluateStrategy();
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.style.display = 'block';
+      setTimeout(() => { t.style.display = 'none'; }, 2600);
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initMap();
+      setInterval(updateAnalysis, 60000); // Re-evalúa automáticamente cada minuto
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./service-worker.js').catch(() => {
+          document.getElementById('gps-help').textContent = 'App lista. Para instalarla y usar GPS continuo, ábrela desde GitHub Pages (HTTPS).';
+        });
+      }
+    });
+  </script>
+</body>
+</html>
